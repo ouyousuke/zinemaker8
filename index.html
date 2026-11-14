@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>八つ折りZINEメーカー</title>
+<meta name="description" content="A4・A3の紙1枚から8ページのミニブック（八つ折りZINE）を作るWebアプリ。写真と文字を自由にレイアウトして、面付け済みのPDFで保存できます。写真はサーバーに送られず、ブラウザの中だけで処理されます。">
+<meta property="og:title" content="八つ折りZINEメーカー">
+<meta property="og:description" content="紙1枚で8ページの本。写真と文字をレイアウトして、面付け済みPDFで印刷。">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#fffdf8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%231c1a17'/%3E%3Cpath d='M14 18h36v28H14z' fill='%23f4f0e8'/%3E%3Cpath d='M32 18v28' stroke='%23ff4f2e' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Noto+Serif+JP:wght@400;700&family=Zen+Maru+Gothic:wght@400;700&family=Zen+Kaku+Gothic+New:wght@400;700&family=M+PLUS+Rounded+1c:wght@400;700&family=Kiwi+Maru&family=Klee+One:wght@400;600&family=Yomogi&family=Dela+Gothic+One&family=DotGothic16&family=Reggae+One&family=Shippori+Mincho:wght@400;700&family=RocknRoll+One&family=Hachi+Maru+Pop&family=Bebas+Neue&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
+<script src="vendor/jspdf.umd.min.js"></script>
+<style>
+:root{--paper:#f4f0e8;--ink:#1c1a17;--muted:#7a746a;--line:#d9d2c4;--accent:#ff4f2e;--panel:#fffdf8}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:"Zen Kaku Gothic New","Noto Sans JP",system-ui,sans-serif;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;overflow:hidden;font-size:14px}
+header{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1.5px solid var(--ink);background:var(--panel);flex-wrap:wrap}
+.logo{font-family:"Dela Gothic One","Noto Sans JP",sans-serif;font-size:19px;white-space:nowrap;margin-right:auto;display:flex;align-items:center;gap:6px}
+.logo b{background:var(--ink);color:var(--paper);padding:1px 7px;font-weight:400}
+.logo small{font-family:"Zen Kaku Gothic New";font-size:11px;color:var(--muted)}
+main{flex:1;display:grid;grid-template-columns:150px minmax(0,1fr) 300px;min-height:0}
+#pages{border-right:1.5px solid var(--ink);overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:12px;background:var(--panel)}
+.thumb{cursor:pointer;text-align:center;font-size:12px;color:var(--muted);user-select:none}
+.thumb canvas{width:100%;display:block;border:1px solid var(--line);background:#fff;box-shadow:2px 2px 0 rgba(28,26,23,.12);margin-bottom:4px}
+.thumb.on{color:var(--ink);font-weight:700}
+.thumb.on canvas{outline:3px solid var(--accent);outline-offset:1px}
+.thumb:not(.wide) canvas{width:50%;margin-left:auto;margin-right:auto}
+.gut{position:absolute;top:0;bottom:0;border-left:1.5px dashed rgba(28,26,23,.45)}
+.plab{position:absolute;top:-22px;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
+#center{display:flex;flex-direction:column;min-width:0;min-height:0}
+.toolbar{display:flex;gap:8px;padding:9px 14px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.toolbar .sp{flex:1}
+#stageArea{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;touch-action:none;background-image:radial-gradient(rgba(28,26,23,.13) 1px,transparent 1px);background-size:16px 16px}
+#pageWrap{position:relative;flex:none}
+#page{position:absolute;inset:0;overflow:hidden;outline:1.5px solid var(--ink);box-shadow:5px 5px 0 rgba(28,26,23,.18)}
+.el{position:absolute;transform-origin:center center;cursor:move}
+.el canvas{width:100%;height:100%;display:block;pointer-events:none}
+.el.locked{cursor:default}
+#guides{position:absolute;inset:0;pointer-events:none}
+.mg{position:absolute;background:repeating-linear-gradient(45deg,rgba(255,79,46,.20) 0 3px,transparent 3px 7px)}
+.snap{position:absolute;background:var(--accent);display:none}
+#sel{position:absolute;pointer-events:none;outline:1.5px solid var(--accent);transform-origin:center center;display:none}
+#sel [data-h]{position:absolute;width:14px;height:14px;background:#fff;border:2px solid var(--accent);border-radius:50%;pointer-events:auto;margin:-7px 0 0 -7px;touch-action:none}
+#sel [data-h=nw]{left:0;top:0;cursor:nwse-resize}#sel [data-h=ne]{left:100%;top:0;cursor:nesw-resize}
+#sel [data-h=sw]{left:0;top:100%;cursor:nesw-resize}#sel [data-h=se]{left:100%;top:100%;cursor:nwse-resize}
+#sel [data-h=n]{left:50%;top:0;border-radius:3px;cursor:ns-resize}#sel [data-h=s]{left:50%;top:100%;border-radius:3px;cursor:ns-resize}
+#sel [data-h=w]{left:0;top:50%;border-radius:3px;cursor:ew-resize}#sel [data-h=e]{left:100%;top:50%;border-radius:3px;cursor:ew-resize}
+#sel [data-h=rot]{left:50%;top:-30px;background:var(--accent);cursor:grab}
+#sel .stem{position:absolute;left:50%;top:-23px;height:23px;border-left:1.5px solid var(--accent)}
+#crop{position:absolute;pointer-events:none;transform-origin:center center;display:none;outline:2px dashed var(--accent);outline-offset:0}
+#crop img{position:absolute;opacity:.42;max-width:none;user-select:none}
+#cropBar{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:10px;background:var(--ink);color:var(--paper);padding:7px 8px 7px 16px;border-radius:999px;font-size:12px;z-index:5;white-space:nowrap;box-shadow:3px 3px 0 rgba(0,0,0,.2)}
+#cropBar input{width:110px;accent-color:var(--accent)}
+#cropBar .btn{box-shadow:none;border-color:var(--paper)}
+#stageArea.cropping .el{cursor:grab}
+#stageArea.cropping.panning .el{cursor:grabbing}
+#hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:12px;line-height:1.7;pointer-events:none;padding:10px}
+#previewArea{position:absolute;inset:0;overflow:auto;padding:24px;display:none;touch-action:auto}
+#previewArea .cap{font-size:12px;color:var(--muted);margin:10px 0 0;text-align:center}
+.spreads{display:flex;flex-wrap:wrap;gap:22px;justify-content:center;align-items:flex-end}
+.spread{text-align:center;font-size:12px;color:var(--muted)}
+.spread .pp{display:flex;box-shadow:5px 5px 0 rgba(28,26,23,.18);outline:1.5px solid var(--ink);background:#fff}
+.spread canvas{display:block}
+.spread .pp canvas+canvas{border-left:1px solid var(--line)}
+#props{border-left:1.5px solid var(--ink);overflow:auto;padding:14px 16px 30px;background:var(--panel)}
+#props h3{font-family:"Dela Gothic One","Noto Sans JP";font-weight:400;font-size:15px;margin:4px 0 12px}
+#props h4{font-size:12px;color:var(--muted);margin:16px 0 6px;font-weight:700;letter-spacing:.05em}
+#props hr{border:0;border-top:1px dashed var(--line);margin:16px 0}
+.row{display:flex;align-items:center;gap:8px;margin:7px 0}
+.row>label{width:64px;flex:none;font-size:12px;color:var(--muted)}
+.row>.grow{flex:1;min-width:0}
+.rg{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+.rg input{flex:1;min-width:0;accent-color:var(--accent)}
+.rg output{font-size:11px;width:44px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.btn{font:inherit;border:1.5px solid var(--ink);background:#fff;color:var(--ink);padding:6px 12px;border-radius:999px;cursor:pointer;font-size:13px;box-shadow:2px 2px 0 var(--ink);white-space:nowrap;line-height:1.2}
+.btn:hover{background:#fff6ef}
+.btn:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink)}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:hover{background:#ff3a17}
+.btn.ghost{box-shadow:none;border-color:var(--line)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn.danger{color:#c62a12;border-color:#c62a12;box-shadow:2px 2px 0 #c62a12}
+.btn:disabled{opacity:.4;cursor:default}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.tabs{display:flex;border:1.5px solid var(--ink);border-radius:999px;overflow:hidden}
+.tabs button{font:inherit;font-size:12px;border:0;background:#fff;padding:6px 12px;cursor:pointer;color:var(--ink)}
+.tabs button+button{border-left:1.5px solid var(--ink)}
+.tabs button.on{background:var(--ink);color:var(--paper)}
+.seg{display:flex;flex:1;border:1.5px solid var(--ink);border-radius:8px;overflow:hidden}
+.seg button{flex:1;font:inherit;font-size:12px;border:0;background:#fff;padding:5px 4px;cursor:pointer;color:var(--ink)}
+.seg button+button{border-left:1px solid var(--ink)}
+.seg button.on{background:var(--ink);color:var(--paper)}
+select,textarea,input[type=number]{font:inherit;border:1.5px solid var(--ink);border-radius:8px;background:#fff;padding:5px 8px;color:var(--ink);width:100%}
+textarea{resize:vertical;min-height:84px;line-height:1.5}
+input[type=number]{width:64px;flex:none}
+input[type=color]{width:38px;height:28px;border:1.5px solid var(--ink);border-radius:6px;padding:1px;background:#fff;cursor:pointer;flex:none}
+.sw{display:flex;gap:5px;flex-wrap:wrap}
+.sw button{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--ink);cursor:pointer;padding:0}
+.note{font-size:11.5px;color:var(--muted);line-height:1.6;margin:6px 0}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin:8px 0}
+.chk input{accent-color:var(--accent);width:16px;height:16px}
+#modal{position:fixed;inset:0;background:rgba(28,26,23,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+#modal .box{background:var(--panel);border:1.5px solid var(--ink);box-shadow:6px 6px 0 var(--ink);border-radius:14px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:22px 24px}
+#modal h2{font-family:"Dela Gothic One","Noto Sans JP";font-weight:400;font-size:18px;margin:0 0 12px}
+#modal ol{padding-left:1.3em;line-height:1.8}
+#modal li{margin-bottom:6px}
+#modal .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+#busy{position:fixed;inset:0;background:rgba(244,240,232,.7);display:none;align-items:center;justify-content:center;z-index:60;font-weight:700}
+#busy span{background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:999px;font-size:13px;opacity:0;transition:.25s;z-index:70;pointer-events:none;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%)}
+.hide{display:none!important}
+@media (max-width:880px){
+  body{overflow:auto;height:auto;min-height:100%}
+  main{grid-template-columns:1fr;grid-template-rows:auto auto auto}
+  #pages{flex-direction:row;border-right:0;border-bottom:1.5px solid var(--ink);order:1;padding:10px}
+  .thumb{width:90px;flex:none}
+  #center{order:2;height:70vh}
+  #props{order:3;border-left:0;border-top:1.5px solid var(--ink)}
+  .logo small{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><b>八つ折り</b>ZINEメーカー <small>A4・A3一枚で8ページの本</small></div>
+  <button class="btn ghost sm" id="bUndo" title="元に戻す (Ctrl+Z)">↶ 戻す</button>
+  <button class="btn ghost sm" id="bRedo" title="やり直す (Ctrl+Shift+Z)">↷ やり直す</button>
+  <button class="btn ghost sm" id="bHelp">折り方・印刷のしかた</button>
+  <button class="btn ghost sm" id="bSaveProj" title="編集データ(.json)を保存">データ保存</button>
+  <button class="btn ghost sm" id="bLoadProj" title="保存した.jsonを読み込む">データ読込</button>
+  <button class="btn sm" id="bPng">PNG</button>
+  <button class="btn primary" id="bPdf">PDFで保存</button>
+</header>
+<main>
+  <aside id="pages"></aside>
+  <section id="center">
+    <div class="toolbar">
+      <button class="btn sm" id="bAddImg">＋ 写真</button>
+      <button class="btn sm" id="bAddText">＋ 文字</button>
+      <button class="btn sm ghost" id="bBulk" title="複数の写真を選ぶと、今のページから1ページ1枚ずつ全面に配置します">写真をまとめて配置</button>
+      <span class="sp"></span>
+      <div class="tabs">
+        <button data-view="edit" class="on">ページ編集</button>
+        <button data-view="book">本のプレビュー</button>
+        <button data-view="sheet">印刷イメージ</button>
+      </div>
+    </div>
+    <div id="stageArea">
+      <div id="pageWrap">
+        <div id="page"></div>
+        <div id="guides"><div class="snap" id="snapV" style="top:0;bottom:0;width:1px"></div><div class="snap" id="snapH" style="left:0;right:0;height:1px"></div></div>
+        <div id="hint">写真をここにドラッグ＆ドロップ<br>または「＋ 写真」「＋ 文字」で追加</div>
+        <div id="sel"><div class="stem"></div><div data-h="rot" title="回転"></div><div data-h="nw"></div><div data-h="n"></div><div data-h="ne"></div><div data-h="e"></div><div data-h="se"></div><div data-h="s"></div><div data-h="sw"></div><div data-h="w"></div></div>
+        <div id="crop"><img alt=""></div>
+      </div>
+      <div id="cropBar"><b>写真の位置を調整中</b><span id="cropHint"></span><span>拡大</span><input type="range" id="cropZoom" min="1" max="4" step="0.01"><button class="btn sm primary" id="cropDone">完了</button></div>
+      <div id="previewArea"></div>
+    </div>
+  </section>
+  <aside id="props"></aside>
+</main>
+<input type="file" id="fImg" accept="image/*" multiple class="hide">
+<input type="file" id="fBulk" accept="image/*" multiple class="hide">
+<input type="file" id="fReplace" accept="image/*" class="hide">
+<input type="file" id="fProj" accept=".json,application/json" class="hide">
+<div id="modal"><div class="box" id="modalBox"></div></div>
+<div id="busy"><span id="busyText">作成中…</span></div>
+<div id="toast"></div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const PAPER = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 } };
+const LABELS = ['表紙', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', '裏表紙'];
+const FONTS = [
+  ['Noto Sans JP', 'ゴシック'], ['Noto Serif JP', '明朝'], ['Zen Kaku Gothic New', '角ゴシック'],
+  ['Zen Maru Gothic', '丸ゴシック'], ['M PLUS Rounded 1c', 'まるもじ'], ['Kiwi Maru', 'キウイ丸'],
+  ['Klee One', 'クレー（えんぴつ風）'], ['Yomogi', 'よもぎ（手書き）'], ['Hachi Maru Pop', 'はちまるポップ'],
+  ['Shippori Mincho', 'しっぽり明朝'], ['Dela Gothic One', 'デラゴシック（極太）'], ['RocknRoll One', 'ロックンロール'],
+  ['Reggae One', 'レゲエ'], ['DotGothic16', 'ドット'], ['Bebas Neue', 'Bebas Neue（英字）'], ['Caveat', 'Caveat（英字手書き）']
+];
+const MM_PER_PT = 0.3528;
+const MARGIN = 5; // 家庭用プリンタの印刷できない余白の目安(mm)
+
+const DL = (async () => {
+  try { return (window.claude && window.claude.use) ? await window.claude.use('downloads') : null; }
+  catch (e) { return null; }
+})();
+
+function defaultState() {
+  return { paper: 'A4', binding: 'left', pageNum: false, guides: 'marks', showMargin: true, cur: 0,
+    pages: Array.from({ length: 8 }, () => ({ bg: '#ffffff' })),
+    units: Array.from({ length: 5 }, () => ({ els: [] })) };
+}
+let state = defaultState();
+const imgStore = {};
+let sel = null, view = 'edit', S = 3;
+
+const dims = () => { const p = PAPER[state.paper]; return { W: p.w, H: p.h, pw: p.w / 4, ph: p.h / 2 }; };
+const uid = () => Math.random().toString(36).slice(2, 10);
+const UNITS = [[0], [1, 2], [3, 4], [5, 6], [7]];
+const ULABELS = ['表紙', '見開き P2–P3', '見開き P4–P5', '見開き P6–P7', '裏表紙'];
+const USHORT = ['表紙', 'P2–3', 'P4–5', 'P6–7', '裏表紙'];
+const unitLR = u => UNITS[u].length === 1 || state.binding === 'left' ? UNITS[u] : [...UNITS[u]].reverse();
+const unitOf = i => { const u = UNITS.findIndex(a => a.includes(i)); return { u, side: unitLR(u).indexOf(i) }; };
+const unitW = (u = state.cur) => UNITS[u].length * dims().pw;
+const isSpread = (u = state.cur) => UNITS[u].length === 2;
+const page = () => state.units[state.cur];
+const findEl = id => page().els.find(e => e.id === id);
+const allEls = () => state.units.flatMap(x => x.els);
+function slotOf(i) {
+  const L = [[3, 1], [3, 0], [2, 0], [1, 0], [0, 0], [0, 1], [1, 1], [2, 1]];
+  let [c, r] = L[i]; if (state.binding === 'right') c = 3 - c;
+  return { col: c, row: r, rot: r === 0 };
+}
+function outerSides(i) {
+  const { col, row } = slotOf(i); const s = { top: false, bottom: true, left: false, right: false };
+  if (col === 0) { if (row === 0) s.right = true; else s.left = true; }
+  if (col === 3) { if (row === 0) s.left = true; else s.right = true; }
+  return s;
+}
+
+/* ---------- images ---------- */
+function registerImage(id, src) {
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => { imgStore[id] = { src, el: im, w: im.naturalWidth, h: im.naturalHeight }; res(imgStore[id]); };
+    im.onerror = () => res(null);
+    im.src = src;
+  });
+}
+async function fileToImage(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const max = 2400; let w = im.naturalWidth, h = im.naturalHeight; const k = Math.min(1, max / Math.max(w, h));
+    w = Math.round(w * k); h = Math.round(h * k);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(im, 0, 0, w, h);
+    const png = /png|gif|webp/.test(file.type);
+    const src = c.toDataURL(png ? 'image/png' : 'image/jpeg', 0.9);
+    const id = 'img_' + uid(); await registerImage(id, src); return id;
+  } finally { URL.revokeObjectURL(url); }
+}
+const filtCache = new Map();
+function sourceFor(id, filter) {
+  const info = imgStore[id]; if (!filter || filter === 'none') return info.el;
+  const key = id + '|' + filter; if (filtCache.has(key)) return filtCache.get(key);
+  const c = document.createElement('canvas'); c.width = info.w; c.height = info.h;
+  const x = c.getContext('2d'); x.drawImage(info.el, 0, 0);
+  const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
+  const duo = { 'riso-pink': [255, 72, 176], 'riso-blue': [0, 120, 191], 'riso-green': [0, 169, 92] }[filter];
+  for (let i = 0; i < p.length; i += 4) {
+    let r = p[i], g = p[i + 1], b = p[i + 2]; const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (filter === 'gray') { r = g = b = l; }
+    else if (filter === 'contrast') { r = g = b = (l - 128) * 1.7 + 128; }
+    else if (filter === 'sepia') {
+      const nr = .393 * r + .769 * g + .189 * b, ng = .349 * r + .686 * g + .168 * b, nb = .272 * r + .534 * g + .131 * b;
+      r = r * .15 + nr * .85; g = g * .15 + ng * .85; b = b * .15 + nb * .85;
+    } else if (filter === 'bright') {
+      r = (l + (r - l) * 1.35) * 1.08; g = (l + (g - l) * 1.35) * 1.08; b = (l + (b - l) * 1.35) * 1.08;
+    } else if (duo) {
+      let t = ((l - 128) * 1.25 + 128) / 255; t = Math.max(0, Math.min(1, t));
+      r = duo[0] + (255 - duo[0]) * t; g = duo[1] + (255 - duo[1]) * t; b = duo[2] + (255 - duo[2]) * t;
+    }
+    p[i] = r; p[i + 1] = g; p[i + 2] = b;
+  }
+  x.putImageData(d, 0, 0); filtCache.set(key, c); return c;
+}
+
+/* ---------- drawing ---------- */
+function shapePath(ctx, el, W, H, inset = 0) {
+  ctx.beginPath(); const x = inset, y = inset, w = Math.max(0, W - 2 * inset), h = Math.max(0, H - 2 * inset);
+  if (el.shape === 'circle') ctx.ellipse(W / 2, H / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  else if (el.shape === 'round') {
+    const r = Math.min(w, h) * 0.12;
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+    else { ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  } else ctx.rect(x, y, w, h);
+}
+function drawImg(ctx, el, s) {
+  const W = el.w * s, H = el.h * s, info = imgStore[el.image];
+  ctx.save(); shapePath(ctx, el, W, H); ctx.clip();
+  if (!info) { ctx.fillStyle = '#ddd'; ctx.fillRect(0, 0, W, H); }
+  else {
+    const k = Math.max(W / info.w, H / info.h) * (el.zoom || 1), dw = info.w * k, dh = info.h * k;
+    const x = (W - dw) / 2 * (1 + (el.offX || 0)), y = (H - dh) / 2 * (1 + (el.offY || 0));
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(sourceFor(el.image, el.filter), x, y, dw, dh);
+  }
+  ctx.restore();
+  if (el.borderW > 0) {
+    ctx.save(); ctx.lineWidth = el.borderW * s; ctx.strokeStyle = el.borderColor;
+    shapePath(ctx, el, W, H, el.borderW * s / 2); ctx.stroke(); ctx.restore();
+  }
+}
+const ROT_CHARS = new Set([...'ー－—―‐-〜～…‥（）()「」『』【】［］[]〈〉《》｛｝{}<>＜＞=＝→←:：;；|｜_']);
+const PUNCT_TR = new Set([...'、。，．']);
+const SMALL = new Set([...'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ']);
+const HANG = new Set([...'、。，．,.」』）)】！？!?ー…ぁぃぅぇぉっゃゅょァィゥェォッャュョ']);
+const fontStr = (el, px) => `${el.weight || 400} ${px}px "${el.family}", "Noto Sans JP", sans-serif`;
+function drawText(ctx, el, s) {
+  const W = el.w * s, H = el.h * s, pad = 1 * s, px = el.size * MM_PER_PT * s;
+  if (el.bg) { ctx.fillStyle = el.bg; ctx.fillRect(0, 0, W, H); }
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+  ctx.font = fontStr(el, px); ctx.fillStyle = el.color; ctx.textBaseline = 'middle';
+  const ls = (el.ls || 0) * px, stroke = el.stroke > 0;
+  if (stroke) { ctx.lineWidth = el.stroke * s * 2; ctx.strokeStyle = el.strokeColor; ctx.lineJoin = 'round'; }
+  const put = (t, x, y) => { if (stroke) ctx.strokeText(t, x, y); ctx.fillText(t, x, y); };
+  const text = el.text || '';
+  if (!el.vertical) {
+    const maxW = W - pad * 2;
+    const mw = t => ctx.measureText(t).width + ls * Math.max(0, [...t].length - 1);
+    const lines = [];
+    for (const para of text.split('\n')) {
+      const toks = para.match(/[A-Za-z0-9À-ÿ'’\-.,!?:;"]+|./gsu) || [];
+      let cur = '';
+      for (const t of toks) {
+        if (cur === '' || mw(cur + t) <= maxW) {
+          if (cur === '' && mw(t) > maxW && [...t].length > 1) {
+            for (const ch of t) { if (cur !== '' && mw(cur + ch) > maxW) { lines.push(cur); cur = ch; } else cur += ch; }
+          } else cur += t;
+        } else if ([...t].length === 1 && HANG.has(t)) cur += t;
+        else {
+          lines.push(cur.replace(/\s+$/, '')); cur = '';
+          if (t === ' ') continue;
+          if (mw(t) <= maxW) cur = t;
+          else for (const ch of t) { if (cur !== '' && mw(cur + ch) > maxW) { lines.push(cur); cur = ch; } else cur += ch; }
+        }
+      }
+      lines.push(cur);
+    }
+    const lh = px * el.lh; ctx.textAlign = 'left';
+    lines.forEach((ln, i) => {
+      const y = pad + lh * (i + 0.5), w = mw(ln);
+      let x = el.align === 'center' ? (W - w) / 2 : el.align === 'right' ? W - pad - w : pad;
+      if (!ls) put(ln, x, y);
+      else for (const ch of ln) { put(ch, x, y); x += ctx.measureText(ch).width + ls; }
+    });
+  } else {
+    const adv = px + ls, colW = px * el.lh, maxH = H - pad * 2, cols = [];
+    for (const para of text.split('\n')) {
+      let col = [];
+      for (const ch of para) {
+        if (col.length && (col.length + 1) * adv > maxH && !HANG.has(ch)) { cols.push(col); col = []; }
+        col.push(ch);
+      }
+      cols.push(col);
+    }
+    ctx.textAlign = 'center';
+    cols.forEach((col, j) => {
+      const cx = W - pad - colW * (j + 0.5), len = col.length * adv;
+      const y0 = el.align === 'center' ? (H - len) / 2 : el.align === 'right' ? H - pad - len : pad;
+      col.forEach((ch, k) => {
+        const cy = y0 + adv * (k + 0.5);
+        if (ROT_CHARS.has(ch) || /[A-Za-z0-9]/.test(ch)) { ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.PI / 2); put(ch, 0, 0); ctx.restore(); }
+        else if (PUNCT_TR.has(ch)) put(ch, cx + px * 0.6, cy - px * 0.6);
+        else if (SMALL.has(ch)) put(ch, cx + px * 0.12, cy - px * 0.12);
+        else put(ch, cx, cy);
+      });
+    });
+  }
+  ctx.restore();
+}
+function drawLocal(ctx, el, s) { if (el.type === 'image') drawImg(ctx, el, s); else drawText(ctx, el, s); }
+function renderPage(ctx, i, s) {
+  const { pw, ph } = dims(), pg = state.pages[i], { u, side } = unitOf(i);
+  ctx.save(); ctx.fillStyle = pg.bg; ctx.fillRect(0, 0, pw * s, ph * s);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, pw * s, ph * s); ctx.clip(); ctx.translate(-side * pw * s, 0);
+  for (const el of state.units[u].els) {
+    ctx.save(); ctx.globalAlpha = el.opacity ?? 1;
+    ctx.translate((el.x + el.w / 2) * s, (el.y + el.h / 2) * s);
+    ctx.rotate((el.rot || 0) * Math.PI / 180);
+    ctx.translate(-el.w * s / 2, -el.h * s / 2);
+    drawLocal(ctx, el, s); ctx.restore();
+  }
+  ctx.restore();
+  if (state.pageNum && i > 0 && i < 7) {
+    ctx.fillStyle = '#555'; ctx.font = `400 ${7 * MM_PER_PT * s}px "Noto Sans JP", sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), pw * s / 2, (ph - 7.5) * s);
+  }
+  ctx.restore();
+}
+function pageCanvas(i, s) {
+  const { pw, ph } = dims(); const c = document.createElement('canvas');
+  c.width = Math.round(pw * s); c.height = Math.round(ph * s); renderPage(c.getContext('2d'), i, s); return c;
+}
+function line(x, a, b, c, d) { x.beginPath(); x.moveTo(a, b); x.lineTo(c, d); x.stroke(); }
+function drawSheetGuides(x, s, mode) {
+  if (mode === 'none') return;
+  const { W, H, pw, ph } = dims(); x.save(); x.lineWidth = Math.max(1, 0.2 * s);
+  if (mode === 'full') {
+    x.strokeStyle = 'rgba(0,0,0,.35)'; x.setLineDash([2 * s, 1.5 * s]);
+    for (let k = 1; k < 4; k++) line(x, k * pw * s, 0, k * pw * s, H * s);
+    line(x, 0, ph * s, pw * s, ph * s); line(x, 3 * pw * s, ph * s, W * s, ph * s);
+  } else {
+    x.strokeStyle = 'rgba(0,0,0,.45)'; x.setLineDash([]);
+    for (let k = 1; k < 4; k++) { line(x, k * pw * s, 5 * s, k * pw * s, 10 * s); line(x, k * pw * s, (H - 10) * s, k * pw * s, (H - 5) * s); }
+    line(x, 5 * s, ph * s, 10 * s, ph * s); line(x, (W - 10) * s, ph * s, (W - 5) * s, ph * s);
+  }
+  x.strokeStyle = 'rgba(230,40,40,.85)'; x.setLineDash([3 * s, 1.5 * s]);
+  line(x, pw * s, ph * s, 3 * pw * s, ph * s);
+  x.restore();
+}
+function renderSheet(s, mode) {
+  const { W, H, pw, ph } = dims(); const c = document.createElement('canvas');
+  c.width = Math.round(W * s); c.height = Math.round(H * s);
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < 8; i++) {
+    const pc = pageCanvas(i, s), { col, rot } = slotOf(i);
+    if (rot) { x.save(); x.translate((col + 1) * pw * s, ph * s); x.rotate(Math.PI); x.drawImage(pc, 0, 0); x.restore(); }
+    else x.drawImage(pc, col * pw * s, ph * s);
+  }
+  drawSheetGuides(x, s, mode === 'preview' ? 'full' : mode);
+  if (mode === 'preview') {
+    x.font = `700 ${4 * s}px "Zen Kaku Gothic New", sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    for (let i = 0; i < 8; i++) {
+      const { col, row, rot } = slotOf(i); const t = LABELS[i] + (rot ? '（上下逆）' : '');
+      const cx = (col + 0.5) * pw * s, cy = (row === 0 ? ph - 6 : ph + 6) * s, w = x.measureText(t).width + 4 * s;
+      x.fillStyle = 'rgba(255,79,46,.92)'; x.fillRect(cx - w / 2, cy - 3 * s, w, 6 * s);
+      x.fillStyle = '#fff'; x.fillText(t, cx, cy);
+    }
+  }
+  return c;
+}
+
+/* ---------- fonts ---------- */
+const fontKeys = new Set(); let fontEpoch = 0;
+function ensureFont(el) {
+  const key = el.family + '|' + el.weight + '|' + el.text;
+  if (fontKeys.has(key) || !document.fonts) return;
+  fontKeys.add(key);
+  document.fonts.load(`${el.weight || 400} 32px "${el.family}"`, el.text || 'あ').then(() => {
+    fontEpoch++; renderEditor(); scheduleThumbs(); if (view !== 'edit') renderView();
+  }).catch(() => {});
+}
+async function ensureAllFonts() {
+  if (!document.fonts) return;
+  const jobs = [document.fonts.load('400 32px "Noto Sans JP"', '0123456789')];
+  for (const el of allEls()) if (el.type === 'text')
+    jobs.push(document.fonts.load(`${el.weight || 400} 32px "${el.family}"`, el.text || 'あ').catch(() => {}));
+  await Promise.all(jobs); await document.fonts.ready;
+}
+
+/* ---------- editor ---------- */
+const elCache = new Map();
+function sigOf(el) {
+  const { x, y, rot, opacity, locked, ...rest } = el;
+  return JSON.stringify(rest) + (el.type === 'text' ? '|' + fontEpoch : '');
+}
+function computeS() {
+  const box = $('#stageArea').getBoundingClientRect(); const { pw, ph } = dims();
+  return Math.max(0.5, Math.min((box.width - 70) / unitW(), (box.height - 80) / ph));
+}
+function renderEditor() {
+  if (view !== 'edit') return;
+  const { pw, ph } = dims(); S = computeS();
+  const wrap = $('#pageWrap'), pg = $('#page');
+  const LR = unitLR(state.cur);
+  wrap.style.width = unitW() * S + 'px'; wrap.style.height = ph * S + 'px';
+  pg.style.background = LR.length === 2 ? `linear-gradient(to right, ${state.pages[LR[0]].bg} 50%, ${state.pages[LR[1]].bg} 50%)` : state.pages[LR[0]].bg;
+  const seen = new Set(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  for (const el of page().els) {
+    let c = elCache.get(el.id);
+    if (!c) {
+      const d = document.createElement('div'); d.className = 'el'; d.dataset.id = el.id;
+      const cv = document.createElement('canvas'); d.appendChild(cv); c = { div: d, canvas: cv, sig: '' }; elCache.set(el.id, c);
+    }
+    pg.appendChild(c.div);
+    c.div.style.cssText = `left:${el.x * S}px;top:${el.y * S}px;width:${el.w * S}px;height:${el.h * S}px;transform:rotate(${el.rot || 0}deg);opacity:${el.opacity ?? 1}`;
+    c.div.classList.toggle('locked', !!el.locked);
+    const sig = sigOf(el) + '|' + S.toFixed(3);
+    if (sig !== c.sig) {
+      c.sig = sig; const cv = c.canvas;
+      cv.width = Math.max(1, Math.round(el.w * S * dpr)); cv.height = Math.max(1, Math.round(el.h * S * dpr));
+      const ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); drawLocal(ctx, el, S * dpr);
+      if (el.type === 'text') ensureFont(el);
+    }
+    seen.add(el.id);
+  }
+  for (const [id, c] of elCache) if (!seen.has(id)) { c.div.remove(); elCache.delete(id); }
+  // margins
+  const g = $('#guides'); g.querySelectorAll('.mg,.gut,.plab').forEach(n => n.remove());
+  const add = (cls, st, txt) => { const d = document.createElement('div'); d.className = cls; d.style.cssText = st; if (txt) d.textContent = txt; g.appendChild(d); };
+  LR.forEach((i, side) => {
+    const L = side * pw * S, Wd = pw * S, m = MARGIN * S;
+    if (state.showMargin) {
+      const o = outerSides(i);
+      if (o.bottom) add('mg', `left:${L}px;width:${Wd}px;bottom:0;height:${m}px`);
+      if (o.left) add('mg', `left:${L}px;top:0;bottom:0;width:${m}px`);
+      if (o.right) add('mg', `left:${L + Wd - m}px;top:0;bottom:0;width:${m}px`);
+    }
+    if (LR.length === 2) add('plab', `left:${L + Wd / 2}px`, LABELS[i]);
+  });
+  if (LR.length === 2) add('gut', `left:${pw * S}px`);
+  $('#hint').style.display = page().els.length ? 'none' : 'flex';
+  renderSel();
+}
+function renderSel() {
+  const box = $('#sel'), el = sel && findEl(sel);
+  if (!el || view !== 'edit') { box.style.display = 'none'; return; }
+  box.style.cssText = `display:block;left:${el.x * S}px;top:${el.y * S}px;width:${el.w * S}px;height:${el.h * S}px;transform:rotate(${el.rot || 0}deg)`;
+  const hideH = el.locked || cropMode;
+  box.querySelectorAll('[data-h]').forEach(h => h.style.display = hideH ? 'none' : '');
+  box.querySelector('.stem').style.display = hideH ? 'none' : '';
+  box.style.outlineStyle = cropMode ? 'none' : '';
+  renderCrop();
+}
+/* ---------- 枠の中で写真を動かす（位置調整モード） ---------- */
+let cropMode = false, cropZoomT;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function cropGeom(el) {
+  const info = imgStore[el.image], k = Math.max(el.w / info.w, el.h / info.h) * (el.zoom || 1);
+  const dw = info.w * k, dh = info.h * k;
+  return { dw, dh, x: (el.w - dw) / 2 * (1 + (el.offX || 0)), y: (el.h - dh) / 2 * (1 + (el.offY || 0)) };
+}
+function renderCrop() {
+  const box = $('#crop'), bar = $('#cropBar'), el = sel && findEl(sel);
+  if (cropMode && (!el || el.type !== 'image' || !imgStore[el.image] || view !== 'edit')) cropMode = false;
+  $('#stageArea').classList.toggle('cropping', cropMode);
+  if (!cropMode) { box.style.display = 'none'; bar.style.display = 'none'; return; }
+  const g = cropGeom(el), X = g.x * S, Y = g.y * S, W = el.w * S, H = el.h * S;
+  box.style.cssText = `display:block;left:${el.x * S}px;top:${el.y * S}px;width:${W}px;height:${H}px;transform:rotate(${el.rot || 0}deg)`;
+  const img = box.querySelector('img');
+  if (img.dataset.id !== el.image) { img.src = imgStore[el.image].src; img.dataset.id = el.image; }
+  img.style.cssText = `left:${X}px;top:${Y}px;width:${g.dw * S}px;height:${g.dh * S}px;clip-path:polygon(evenodd,0 0,100% 0,100% 100%,0 100%,0 0,${-X}px ${-Y}px,${-X + W}px ${-Y}px,${-X + W}px ${-Y + H}px,${-X}px ${-Y + H}px,${-X}px ${-Y}px)`;
+  bar.style.display = 'flex';
+  const z = $('#cropZoom'); if (document.activeElement !== z) z.value = el.zoom || 1;
+  const canX = g.dw - el.w > 0.05, canY = g.dh - el.h > 0.05;
+  $('#cropHint').textContent = canX && canY ? 'ドラッグで上下左右に移動' : canX ? 'ドラッグで左右に移動（拡大すると上下も）' : canY ? 'ドラッグで上下に移動（拡大すると左右も）' : '拡大すると動かせます';
+}
+function enterCrop() {
+  const el = sel && findEl(sel); if (!el || el.type !== 'image' || !imgStore[el.image]) return;
+  const g = cropGeom(el);
+  if (g.dw - el.w < 0.05 && g.dh - el.h < 0.05) el.zoom = Math.max(el.zoom || 1, 1.2);
+  cropMode = true; renderEditor(); renderProps();
+}
+function exitCrop() { if (!cropMode) return; cropMode = false; commit(); renderEditor(); renderProps(); }
+function hitImage(el, p) {
+  const th = (el.rot || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+  const dx = p.x - (el.x + el.w / 2), dy = p.y - (el.y + el.h / 2);
+  const u = dx * c + dy * sn + el.w / 2, v = -dx * sn + dy * c + el.h / 2, g = cropGeom(el);
+  return u >= Math.min(0, g.x) && u <= Math.max(el.w, g.x + g.dw) && v >= Math.min(0, g.y) && v <= Math.max(el.h, g.y + g.dh);
+}
+function zoomCrop(el, z) { el.zoom = clamp(z, 1, 4); renderEditor(); syncProps(); clearTimeout(cropZoomT); cropZoomT = setTimeout(commit, 500); }
+$('#cropZoom').addEventListener('input', e => { const el = sel && findEl(sel); if (el) zoomCrop(el, parseFloat(e.target.value)); });
+$('#cropDone').addEventListener('click', exitCrop);
+$('#cropBar').addEventListener('pointerdown', e => e.stopPropagation());
+$('#stageArea').addEventListener('wheel', e => {
+  if (!cropMode) return; const el = sel && findEl(sel); if (!el) return;
+  e.preventDefault(); zoomCrop(el, (el.zoom || 1) * Math.exp(-e.deltaY * 0.0015));
+}, { passive: false });
+
+/* ---------- interaction ---------- */
+let drag = null;
+const ptOf = e => { const r = $('#page').getBoundingClientRect(); return { x: (e.clientX - r.left) / S, y: (e.clientY - r.top) / S }; };
+$('#stageArea').addEventListener('pointerdown', e => {
+  if (view !== 'edit') return;
+  const p0 = ptOf(e);
+  if (cropMode) {
+    const el = findEl(sel);
+    if (el && hitImage(el, p0)) {
+      drag = { mode: 'pan', el, st: { ...el }, p0 }; $('#stageArea').classList.add('panning');
+      $('#stageArea').setPointerCapture(e.pointerId); e.preventDefault(); return;
+    }
+    exitCrop();
+  }
+  const h = e.target.closest('[data-h]'), elDiv = e.target.closest('.el'), p = p0;
+  if (h && sel) { const el = findEl(sel); drag = { mode: h.dataset.h, el, st: { ...el }, p0: p }; }
+  else if (elDiv) {
+    const changed = sel !== elDiv.dataset.id; sel = elDiv.dataset.id; const el = findEl(sel);
+    if (changed) renderProps();
+    if (!el.locked) drag = { mode: 'move', el, st: { ...el }, p0: p };
+  } else if (e.target.closest('#pageWrap') || e.target === $('#stageArea')) { if (sel) { sel = null; renderProps(); } }
+  if (drag) { $('#stageArea').setPointerCapture(e.pointerId); e.preventDefault(); }
+  renderSel();
+});
+$('#stageArea').addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = ptOf(e), dx = p.x - drag.p0.x, dy = p.y - drag.p0.y, el = drag.el, st = drag.st;
+  if (!drag.changed && Math.hypot(dx, dy) * S < 2) return;
+  if (drag.mode === 'pan') {
+    const th = (st.rot || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    const lx = dx * c + dy * sn, ly = -dx * sn + dy * c, g = cropGeom(st);
+    const ox = el.w - g.dw, oy = el.h - g.dh;
+    if (ox < -0.01) el.offX = clamp((st.offX || 0) + lx * 2 / ox, -1, 1);
+    if (oy < -0.01) el.offY = clamp((st.offY || 0) + ly * 2 / oy, -1, 1);
+  } else if (drag.mode === 'move') {
+    const r = snapPos(st.x + dx, st.y + dy, el.w, el.h); el.x = r.x; el.y = r.y; showSnap(r.vx, r.hy);
+  } else if (drag.mode === 'rot') {
+    const cx = st.x + st.w / 2, cy = st.y + st.h / 2;
+    let a = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI + 90; a = ((a % 360) + 360) % 360;
+    if (e.shiftKey) a = Math.round(a / 15) * 15; else for (const t of [0, 90, 180, 270, 360]) if (Math.abs(a - t) < 4) a = t;
+    a = a % 360; el.rot = Math.round((a > 180 ? a - 360 : a) * 10) / 10;
+  } else {
+    const m = drag.mode, sx = m.includes('e') ? 1 : m.includes('w') ? -1 : 0, sy = m.includes('s') ? 1 : m.includes('n') ? -1 : 0;
+    const th = (st.rot || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    const lx = dx * c + dy * sn, ly = -dx * sn + dy * c;
+    let w = st.w + sx * lx, h = st.h + sy * ly;
+    if (el.keepRatio && sx && sy) { const f = Math.max((w / st.w + h / st.h) / 2, 0.02); w = st.w * f; h = st.h * f; }
+    w = Math.max(3, w); h = Math.max(3, h);
+    const ox = -sx * st.w / 2, oy = -sy * st.h / 2, cx0 = st.x + st.w / 2, cy0 = st.y + st.h / 2;
+    const oppX = cx0 + ox * c - oy * sn, oppY = cy0 + ox * sn + oy * c;
+    const ax = sx * w / 2, ay = sy * h / 2, ncx = oppX + ax * c - ay * sn, ncy = oppY + ax * sn + ay * c;
+    el.w = w; el.h = h; el.x = ncx - w / 2; el.y = ncy - h / 2;
+  }
+  drag.changed = true; renderEditor(); syncProps();
+});
+const endDrag = () => { $('#stageArea').classList.remove('panning'); if (!drag) return; const ch = drag.changed; drag = null; showSnap(null, null); if (ch) commit(); };
+$('#stageArea').addEventListener('pointerup', endDrag);
+$('#stageArea').addEventListener('pointercancel', endDrag);
+$('#stageArea').addEventListener('dblclick', e => {
+  if (cropMode) { exitCrop(); return; }
+  const d = document.elementsFromPoint(e.clientX, e.clientY).find(n => n.classList && n.classList.contains('el'));
+  if (!d) return; const el = findEl(d.dataset.id);
+  if (el && el.type === 'image') { sel = el.id; enterCrop(); return; }
+  if (el && el.type === 'text') { const t = $('#pText'); if (t) { t.focus(); t.select(); } }
+});
+function snapPos(x, y, w, h) {
+  const { pw, ph } = dims(), thr = 6 / S; let vx = null, hy = null;
+  let best = thr;
+  const xs = []; for (let k = 0; k <= UNITS[state.cur].length * 2; k++) xs.push(k * pw / 2);
+  for (const t of xs) for (const [off] of [[0], [w / 2], [w]]) {
+    const d = Math.abs(x + off - t); if (d < best) { best = d; vx = t; x = t - off; }
+  }
+  best = thr;
+  for (const t of [0, ph / 2, ph]) for (const [off] of [[0], [h / 2], [h]]) {
+    const d = Math.abs(y + off - t); if (d < best) { best = d; hy = t; y = t - off; }
+  }
+  return { x, y, vx, hy };
+}
+function showSnap(vx, hy) {
+  const v = $('#snapV'), h = $('#snapH');
+  v.style.display = vx == null ? 'none' : 'block'; if (vx != null) v.style.left = vx * S + 'px';
+  h.style.display = hy == null ? 'none' : 'block'; if (hy != null) h.style.top = hy * S + 'px';
+}
+// drag & drop files
+$('#stageArea').addEventListener('dragover', e => { e.preventDefault(); });
+$('#stageArea').addEventListener('drop', e => {
+  e.preventDefault(); if (view !== 'edit') { view = 'edit'; renderView(); }
+  if (e.dataTransfer && e.dataTransfer.files.length) addImages(e.dataTransfer.files, 'one');
+});
+document.addEventListener('keydown', e => {
+  const typing = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName || ''), mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); redo(); return; }
+  if (typing || $('#modal').style.display === 'flex') return;
+  const el = sel && findEl(sel); if (!el) return;
+  if (cropMode) {
+    if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); exitCrop(); }
+    else if (e.key.startsWith('Arrow')) {
+      e.preventDefault(); const d = e.shiftKey ? 0.1 : 0.02;
+      if (e.key === 'ArrowLeft') el.offX = clamp((el.offX || 0) - d, -1, 1); if (e.key === 'ArrowRight') el.offX = clamp((el.offX || 0) + d, -1, 1);
+      if (e.key === 'ArrowUp') el.offY = clamp((el.offY || 0) - d, -1, 1); if (e.key === 'ArrowDown') el.offY = clamp((el.offY || 0) + d, -1, 1);
+      renderEditor(); syncProps(); clearTimeout(nudgeT); nudgeT = setTimeout(commit, 400);
+    }
+    return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); act('del'); }
+  else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); act('dup'); }
+  else if (e.key === 'Escape') { sel = null; renderProps(); renderSel(); }
+  else if (e.key.startsWith('Arrow') && !el.locked) {
+    e.preventDefault(); const d = e.shiftKey ? 5 : 0.5;
+    if (e.key === 'ArrowLeft') el.x -= d; if (e.key === 'ArrowRight') el.x += d;
+    if (e.key === 'ArrowUp') el.y -= d; if (e.key === 'ArrowDown') el.y += d;
+    renderEditor(); clearTimeout(nudgeT); nudgeT = setTimeout(commit, 400);
+  }
+});
+let nudgeT;
+
+/* ---------- add elements ---------- */
+function newImageEl(id, mode) {
+  const { pw, ph } = dims(), UW = unitW(), info = imgStore[id], asp = info.w / info.h; let w, h, x, y;
+  if (mode === 'fill') { x = 0; y = 0; w = pw; h = ph; }
+  else { w = UW * 0.8; h = w / asp; if (h > ph * 0.8) { h = ph * 0.8; w = h * asp; } x = (UW - w) / 2; y = (ph - h) / 2; }
+  return { id: uid(), type: 'image', image: id, x, y, w, h, rot: 0, opacity: 1, zoom: 1, offX: 0, offY: 0,
+    shape: 'rect', filter: 'none', borderW: 0, borderColor: '#ffffff', keepRatio: true, locked: false };
+}
+async function addImages(files, mode) {
+  const list = [...files].filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic)$/i.test(f.name));
+  if (!list.length) return;
+  showBusy('写真を読み込み中…'); let failed = 0;
+  if (mode === 'spread') {
+    const start = UNITS[state.cur][0]; let i = start;
+    for (const f of list) {
+      if (i > 7) break;
+      try {
+        const id = await fileToImage(f), el = newImageEl(id, 'fill'), { u, side } = unitOf(i);
+        el.x = side * dims().pw; state.units[u].els.push(el); i++;
+      } catch (e) { failed++; }
+    }
+    sel = null; toast(`${LABELS[start]}から${i - start}ページに配置しました`);
+  } else {
+    let k = 0, last = null;
+    for (const f of list) {
+      try { const id = await fileToImage(f); const el = newImageEl(id, 'fit'); el.x += k * 4; el.y += k * 4; page().els.push(el); last = el.id; k++; } catch (e) { failed++; }
+    }
+    if (last) sel = last;
+  }
+  hideBusy(); if (failed) toast(`読み込めない画像が${failed}枚ありました（HEICはJPEGに変換してください）`, 4000);
+  commit(); renderAll();
+}
+function addText() {
+  const { pw, ph } = dims();
+  const el = { id: uid(), type: 'text', text: 'ここに文字を入力', family: 'Noto Sans JP', weight: 700, size: state.paper === 'A3' ? 20 : 14,
+    color: '#1c1a17', align: 'left', vertical: false, lh: 1.5, ls: 0, stroke: 0, strokeColor: '#ffffff', bg: '',
+    x: 6, y: ph * 0.42, w: pw - 12, h: 18, rot: 0, opacity: 1, keepRatio: false, locked: false };
+  page().els.push(el); sel = el.id; commit(); renderAll();
+  setTimeout(() => { const t = $('#pText'); if (t) { t.focus(); t.select(); } }, 30);
+}
+
+/* ---------- properties ---------- */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const seg = (k, opts, cur, attr = 'data-set') => `<div class="seg">${opts.map(([v, l]) => `<button ${attr}="${k}" data-v="${v}" class="${String(cur) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+const range = (k, min, max, step) => `<div class="rg"><input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}"><output data-o="${k}"></output></div>`;
+const row = (label, html) => `<div class="row"><label>${label}</label><div class="grow" style="display:flex;gap:6px;align-items:center">${html}</div></div>`;
+const FMT = { zoom: v => '×' + (+v).toFixed(2), offX: v => (+v).toFixed(2), offY: v => (+v).toFixed(2), size: v => v + 'pt',
+  rot: v => Math.round(v) + '°', opacity: v => Math.round(v * 100) + '%', lh: v => (+v).toFixed(2), ls: v => (+v).toFixed(2),
+  stroke: v => (+v).toFixed(1) + 'mm', borderW: v => (+v).toFixed(1) + 'mm' };
+const commonTail = el => `
+  <h4>見た目</h4>
+  ${row('不透明度', range('opacity', 0.1, 1, 0.01))}
+  ${row('回転', range('rot', -180, 180, 1))}
+  <h4>配置</h4>
+  <div class="btns"><button class="btn sm" data-act="centerH">左右中央</button><button class="btn sm" data-act="centerV">上下中央</button></div>
+  <div class="btns"><button class="btn sm ghost" data-act="front">最前面</button><button class="btn sm ghost" data-act="forward">前へ</button><button class="btn sm ghost" data-act="backward">後ろへ</button><button class="btn sm ghost" data-act="back">最背面</button></div>
+  <hr>
+  <div class="btns"><button class="btn sm" data-act="dup">複製</button><button class="btn sm" data-act="lock">${el.locked ? '🔓 固定を解除' : '🔒 固定'}</button><button class="btn sm danger" data-act="del">削除</button></div>
+  <p class="note">ドラッグで移動、四隅で拡大縮小、上の●で回転。矢印キーで微調整、Deleteで削除。</p>`;
+function pagePropsHTML() {
+  const LR = unitLR(state.cur), sw = ['#ffffff', '#f4efe4', '#fff3b0', '#ffd6e0', '#cfe8ff', '#d7f2d0', '#1c1a17', '#ff4f2e'];
+  const sp = LR.length === 2;
+  return `<h3>${ULABELS[state.cur]}</h3>
+  ${LR.map((i, side) => row(sp ? `背景 ${side ? '右' : '左'}<br>（${LABELS[i]}）` : '背景色', `<input type="color" data-pbg="${i}" value="${state.pages[i].bg}">`)).join('')}
+  ${row(sp ? '両ページ' : '', `<div class="sw">${sw.map(c => `<button data-swatch="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>`)}
+  <div class="btns"><button class="btn sm ghost" data-act="clearPage">${sp ? 'この見開きを空にする' : 'このページを空にする'}</button></div>
+  <p class="note">${sp ? '見開きの2ページは印刷する紙の上でも隣り合っているので、真ん中（のど）をまたいで置いた写真は切れ目なくつながります。点線が折り目です。<br>' : ''}写真や文字をクリックすると、ここで編集できます。</p>
+  <hr><h3>本の設定</h3>
+  ${row('用紙', seg('paper', [['A4', 'A4'], ['A3', 'A3']], state.paper, 'data-gset'))}
+  ${row('綴じ方', seg('binding', [['left', '左綴じ・横書き'], ['right', '右綴じ・縦書き']], state.binding, 'data-gset'))}
+  ${row('折り線', `<select data-gk="guides"><option value="marks">切り込み線＋目印だけ印刷</option><option value="full">折り線もすべて印刷</option><option value="none">何も印刷しない</option></select>`)}
+  <label class="chk"><input type="checkbox" data-gk="pageNum" ${state.pageNum ? 'checked' : ''}>ページ番号を入れる（P2〜P7）</label>
+  <label class="chk"><input type="checkbox" data-gk="showMargin" ${state.showMargin ? 'checked' : ''}>印刷余白ガイドを表示</label>
+  <p class="note">赤い斜線は紙の外周にあたる部分です。家庭用プリンタでは端の約5mmが印刷されないことがあるので、大事な文字は斜線の内側に。写真は全面配置でOK（端が少し白く残るだけです）。</p>
+  <hr><div class="btns"><button class="btn sm ghost" data-act="newProject">新しく作り直す</button></div>
+  <p class="note">写真はサーバーに送信されません。編集内容はこのブラウザ内だけに自動保存されます。別の端末で続けるときは「データ保存」で.jsonを書き出してください。</p>`;
+}
+function imagePropsHTML(el) {
+  return `<h3>写真</h3>
+  ${isSpread() ? `<div class="btns"><button class="btn sm primary" data-act="fillSpread">見開き全面に</button><button class="btn sm" data-act="fillL">左ページ全面</button><button class="btn sm" data-act="fillR">右ページ全面</button></div>
+  <div class="btns"><button class="btn sm" data-act="fitMargin">余白をとって配置</button><button class="btn sm ghost" data-act="replace">差し替え</button></div>`
+  : `<div class="btns"><button class="btn sm" data-act="fill">ページ全面に</button><button class="btn sm" data-act="fitMargin">余白をとって配置</button><button class="btn sm ghost" data-act="replace">差し替え</button></div>`}
+  <h4>トリミング（枠の中の写真の位置）</h4>
+  <div class="btns"><button class="btn sm ${cropMode ? '' : 'primary'}" data-act="crop">${cropMode ? '✓ 位置調整を終える' : '✥ 枠の中で写真を動かす'}</button></div>
+  <p class="note" style="margin-top:0">写真をダブルクリックしても始められます。ドラッグで上下左右に移動、マウスホイールで拡大縮小。</p>
+  ${row('ズーム', range('zoom', 1, 4, 0.01))}
+  ${row('左右', range('offX', -1, 1, 0.01))}
+  ${row('上下', range('offY', -1, 1, 0.01))}
+  <div class="btns"><button class="btn sm ghost" data-act="resetCrop">トリミングをリセット</button></div>
+  <label class="chk"><input type="checkbox" data-k="keepRatio">四隅で縦横比を保つ（辺の□は自由に変形）</label>
+  <h4>かたち・フィルター</h4>
+  ${row('形', seg('shape', [['rect', '四角'], ['round', '角丸'], ['circle', '円']], el.shape))}
+  ${row('フィルター', `<select data-k="filter"><option value="none">なし</option><option value="gray">モノクロ</option><option value="contrast">白黒（コピー風）</option><option value="sepia">セピア</option><option value="bright">あざやか</option><option value="riso-pink">リソ風ピンク</option><option value="riso-blue">リソ風ブルー</option><option value="riso-green">リソ風グリーン</option></select>`)}
+  ${row('枠線', range('borderW', 0, 5, 0.1) + `<input type="color" data-k="borderColor">`)}
+  ${commonTail(el)}`;
+}
+function textPropsHTML(el) {
+  const al = el.vertical ? [['left', '上'], ['center', '中'], ['right', '下']] : [['left', '左'], ['center', '中央'], ['right', '右']];
+  return `<h3>文字</h3>
+  <textarea id="pText" data-k="text" rows="4"></textarea>
+  ${row('フォント', `<select data-k="family">${FONTS.map(([f, l]) => `<option value="${esc(f)}" style="font-family:'${esc(f)}'">${l}</option>`).join('')}</select>`)}
+  ${row('書き方', seg('vertical', [['false', '横書き'], ['true', '縦書き']], el.vertical))}
+  ${row('太さ', seg('weight', [['400', '標準'], ['700', '太字']], el.weight))}
+  ${row('サイズ', range('size', 5, 120, 1) + `<input type="number" data-k="size" min="3" max="300" step="1">`)}
+  ${row('色', `<input type="color" data-k="color"><div class="sw">${['#1c1a17', '#ffffff', '#ff4f2e', '#ff48b0', '#0078bf', '#00a95c', '#ffe800'].map(c => `<button data-tcolor="${c}" style="background:${c}"></button>`).join('')}</div>`)}
+  ${row('揃え', seg('align', al, el.align))}
+  ${row('行間', range('lh', 0.9, 3, 0.05))}
+  ${row('字間', range('ls', -0.2, 1, 0.02))}
+  ${row('縁取り', range('stroke', 0, 3, 0.1) + `<input type="color" data-k="strokeColor">`)}
+  ${row('背景', `<label class="chk" style="margin:0"><input type="checkbox" data-act="bgToggle" ${el.bg ? 'checked' : ''}>塗る</label><input type="color" data-k="bg" ${el.bg ? '' : 'disabled'}>`)}
+  <p class="note">文字が枠からはみ出すと隠れます。枠の辺や角をドラッグして広げてください。</p>
+  ${commonTail(el)}`;
+}
+function renderProps() {
+  const el = sel && findEl(sel), P = $('#props');
+  P.innerHTML = !el ? pagePropsHTML() : el.type === 'image' ? imagePropsHTML(el) : textPropsHTML(el);
+  const g = P.querySelector('[data-gk=guides]'); if (g) g.value = state.guides;
+  syncProps();
+}
+function syncProps() {
+  const el = sel && findEl(sel); if (!el) return;
+  $('#props').querySelectorAll('[data-k]').forEach(inp => {
+    if (document.activeElement === inp && inp.type !== 'range') return;
+    const k = inp.dataset.k; let v = el[k];
+    if (inp.type === 'checkbox') inp.checked = !!v;
+    else if (inp.type === 'color') inp.value = v || '#ffffff';
+    else if (k === 'size' && inp.type === 'number') inp.value = v;
+    else inp.value = v ?? '';
+  });
+  $('#props').querySelectorAll('[data-o]').forEach(o => { const k = o.dataset.o; o.textContent = FMT[k] ? FMT[k](el[k] ?? 0) : el[k]; });
+}
+const parseV = v => v === 'true' ? true : v === 'false' ? false : (v !== '' && !isNaN(+v)) ? +v : v;
+$('#props').addEventListener('input', e => {
+  const t = e.target, el = sel && findEl(sel);
+  if (t.dataset.k && el) {
+    const k = t.dataset.k;
+    el[k] = t.type === 'checkbox' ? t.checked : (t.type === 'range' || t.type === 'number') ? parseFloat(t.value) || 0 : t.value;
+    if (k === 'size' && el.size < 3) el.size = 3;
+    renderEditor(); syncProps(); scheduleThumbs();
+  } else if (t.dataset.pbg) { state.pages[+t.dataset.pbg].bg = t.value; renderEditor(); scheduleThumbs(); }
+});
+$('#props').addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.k || t.dataset.pbg) { commit(); if (t.dataset.k === 'text') ensureFont(findEl(sel)); }
+  else if (t.dataset.gk) {
+    state[t.dataset.gk] = t.type === 'checkbox' ? t.checked : t.value; commit(); renderEditor(); scheduleThumbs(); if (view !== 'edit') renderView();
+  } else if (t.dataset.act === 'bgToggle') act('bgToggle');
+});
+$('#props').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const el = sel && findEl(sel);
+  if (b.dataset.set && el) { el[b.dataset.set] = parseV(b.dataset.v); commit(); renderAll(); }
+  else if (b.dataset.gset) setGlobal(b.dataset.gset, b.dataset.v);
+  else if (b.dataset.swatch) { for (const i of UNITS[state.cur]) state.pages[i].bg = b.dataset.swatch; commit(); renderAll(); }
+  else if (b.dataset.tcolor && el) { el.color = b.dataset.tcolor; commit(); renderEditor(); syncProps(); scheduleThumbs(); }
+  else if (b.dataset.act) act(b.dataset.act);
+});
+function setGlobal(k, v) {
+  if (k === 'paper' && v !== state.paper) {
+    const f = PAPER[v].w / PAPER[state.paper].w;
+    for (const el of allEls()) {
+      el.x *= f; el.y *= f; el.w *= f; el.h *= f;
+      if (el.type === 'text') { el.size = Math.round(el.size * f * 10) / 10; el.stroke *= f; } else el.borderW *= f;
+    }
+  }
+  state[k] = v; commit(); renderAll();
+}
+let replaceTarget = null;
+async function act(a) {
+  const pg = page(), el = sel && findEl(sel), { pw, ph } = dims(), UW = unitW();
+  const idx = el ? pg.els.indexOf(el) : -1;
+  switch (a) {
+    case 'del': pg.els = pg.els.filter(e => e.id !== sel); sel = null; break;
+    case 'dup': { const c = JSON.parse(JSON.stringify(el)); c.id = uid(); c.x += 3; c.y += 3; c.locked = false; pg.els.push(c); sel = c.id; break; }
+    case 'front': pg.els.splice(idx, 1); pg.els.push(el); break;
+    case 'back': pg.els.splice(idx, 1); pg.els.unshift(el); break;
+    case 'forward': if (idx < pg.els.length - 1) [pg.els[idx], pg.els[idx + 1]] = [pg.els[idx + 1], pg.els[idx]]; break;
+    case 'backward': if (idx > 0) [pg.els[idx], pg.els[idx - 1]] = [pg.els[idx - 1], pg.els[idx]]; break;
+    case 'fill': case 'fillL': Object.assign(el, { x: 0, y: 0, w: pw, h: ph, rot: 0 }); break;
+    case 'fillR': Object.assign(el, { x: pw, y: 0, w: pw, h: ph, rot: 0 }); break;
+    case 'fillSpread': Object.assign(el, { x: 0, y: 0, w: UW, h: ph, rot: 0 }); break;
+    case 'fitMargin': {
+      const info = imgStore[el.image]; const asp = info ? info.w / info.h : el.w / el.h, m = 9;
+      let w = UW - m * 2, h = w / asp; if (h > ph - m * 2) { h = ph - m * 2; w = h * asp; }
+      Object.assign(el, { w, h, x: (UW - w) / 2, y: (ph - h) / 2, rot: 0, zoom: 1, offX: 0, offY: 0 }); break;
+    }
+    case 'resetCrop': Object.assign(el, { zoom: 1, offX: 0, offY: 0 }); break;
+    case 'centerH': el.x = (UW - el.w) / 2; break;
+    case 'centerV': el.y = (ph - el.h) / 2; break;
+    case 'lock': el.locked = !el.locked; break;
+    case 'bgToggle': el.bg = el.bg ? '' : '#ffffff'; break;
+    case 'crop': cropMode ? exitCrop() : enterCrop(); return;
+    case 'replace': replaceTarget = el.id; $('#fReplace').click(); return;
+    case 'clearPage':
+      if (!await confirmModal(`${ULABELS[state.cur]}を空にしますか？`, `${ULABELS[state.cur]}の写真と文字をすべて削除します（「戻す」で取り消せます）。`, '空にする')) return;
+      pg.els = []; for (const i of UNITS[state.cur]) state.pages[i].bg = '#ffffff'; sel = null; break;
+    case 'newProject':
+      if (!await confirmModal('新しく作り直しますか？', '8ページすべての内容を消して、まっさらな状態から始めます（「戻す」で取り消せます）。', '作り直す')) return;
+      { const keep = { paper: state.paper, binding: state.binding }; state = Object.assign(defaultState(), keep); sel = null; } break;
+    default: return;
+  }
+  commit(); renderAll();
+}
+
+/* ---------- pages list & views ---------- */
+function buildPagesList() {
+  const box = $('#pages'); box.innerHTML = '';
+  for (let i = 0; i < 5; i++) {
+    const d = document.createElement('div'); d.className = 'thumb' + (UNITS[i].length === 2 ? ' wide' : ''); d.dataset.i = i;
+    d.innerHTML = `<canvas></canvas><span>${USHORT[i]}</span>`;
+    d.onclick = () => { if (cropMode) exitCrop(); state.cur = i; sel = null; if (view !== 'edit') view = 'edit'; renderAll(); };
+    box.appendChild(d);
+  }
+}
+let thumbT;
+function scheduleThumbs() { clearTimeout(thumbT); thumbT = setTimeout(renderThumbs, 180); }
+function renderThumbs() {
+  const { pw, ph } = dims(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  document.querySelectorAll('.thumb').forEach(d => {
+    const u = +d.dataset.i, cv = d.querySelector('canvas'), LR = unitLR(u), s = 100 * dpr / (pw * 2);
+    cv.width = Math.round(pw * s * LR.length); cv.height = Math.round(ph * s);
+    const ctx = cv.getContext('2d');
+    LR.forEach((i, side) => { ctx.save(); ctx.translate(Math.round(side * pw * s), 0); renderPage(ctx, i, s); ctx.restore(); });
+    if (LR.length === 2) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(Math.round(pw * s) - 0.5, 0, 1, cv.height); }
+    d.classList.toggle('on', u === state.cur);
+  });
+}
+function renderView() {
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+  const pa = $('#previewArea');
+  $('#pageWrap').style.display = view === 'edit' ? '' : 'none'; pa.style.display = view === 'edit' ? 'none' : 'block';
+  $('#stageArea').style.touchAction = view === 'edit' ? 'none' : 'auto';
+  if (view === 'edit') { renderEditor(); return; }
+  const { W, H, pw, ph } = dims(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  pa.innerHTML = '';
+  if (view === 'sheet') {
+    const avail = Math.min(pa.clientWidth - 48, (pa.clientHeight - 90) * W / H), s = Math.max(1, avail / W);
+    const cv = renderSheet(s * dpr, 'preview'); cv.style.cssText = `width:${W * s}px;display:block;margin:0 auto;outline:1.5px solid var(--ink);box-shadow:5px 5px 0 rgba(28,26,23,.18)`;
+    pa.appendChild(cv);
+    const p = document.createElement('p'); p.className = 'cap';
+    p.innerHTML = `${state.paper}横・1枚に面付けした状態です。赤い破線が切り込み線、灰色の破線が折り線。オレンジのラベルはプレビュー用で印刷されません。<br>実際に印刷される線：<b>${{ marks: '切り込み線＋目印', full: '折り線と切り込み線', none: 'なし' }[state.guides]}</b>`;
+    pa.appendChild(p);
+  } else {
+    const wrap = document.createElement('div'); wrap.className = 'spreads';
+    const ps = Math.max(0.6, Math.min((pa.clientWidth - 80) / (pw * 2) / 1.4, (pa.clientHeight - 100) / ph / 1.6, 3));
+    const mk = (idxs, cap) => {
+      const d = document.createElement('div'); d.className = 'spread'; const pp = document.createElement('div'); pp.className = 'pp';
+      for (const i of idxs) { const c = pageCanvas(i, ps * dpr); c.style.width = pw * ps + 'px'; pp.appendChild(c); }
+      d.appendChild(pp); const s = document.createElement('div'); s.style.marginTop = '8px'; s.textContent = cap; d.appendChild(s); wrap.appendChild(d);
+    };
+    const R = state.binding === 'right';
+    mk([0], '表紙');
+    for (const [a, b] of [[1, 2], [3, 4], [5, 6]]) mk(R ? [b, a] : [a, b], R ? `P${b + 1} ・ P${a + 1}` : `P${a + 1} ・ P${b + 1}`);
+    mk([7], '裏表紙');
+    pa.appendChild(wrap);
+    const p = document.createElement('p'); p.className = 'cap'; p.textContent = R ? '右綴じ：右から左へめくる順に並んでいます。' : '左綴じ：左から右へめくる順に並んでいます。';
+    pa.appendChild(p);
+  }
+}
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { if (cropMode) exitCrop(); view = b.dataset.view; if (view !== 'edit') sel = null; renderProps(); renderView(); });
+function renderAll() { renderView(); renderProps(); scheduleThumbs(); }
+window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(renderView, 120); });
+
+/* ---------- history & persistence ---------- */
+let hist = [], hi = -1;
+const snapshot = () => JSON.stringify({ paper: state.paper, binding: state.binding, pageNum: state.pageNum, guides: state.guides, showMargin: state.showMargin, pages: state.pages, units: state.units });
+function commit() {
+  const s = snapshot(); if (hist[hi] === s) return;
+  hist = hist.slice(0, hi + 1); hist.push(s); if (hist.length > 80) hist.shift(); hi = hist.length - 1;
+  scheduleSave(); scheduleThumbs(); updUndo();
+}
+function restoreSnap(s) { Object.assign(state, JSON.parse(s)); if (sel && !findEl(sel)) sel = null; renderAll(); scheduleSave(); updUndo(); }
+function undo() { if (hi > 0) { hi--; restoreSnap(hist[hi]); } }
+function redo() { if (hi < hist.length - 1) { hi++; restoreSnap(hist[hi]); } }
+function updUndo() { $('#bUndo').disabled = hi <= 0; $('#bRedo').disabled = hi >= hist.length - 1; }
+$('#bUndo').onclick = undo; $('#bRedo').onclick = redo;
+
+function projectData() {
+  const used = {};
+  for (const el of allEls()) if (el.type === 'image' && imgStore[el.image]) used[el.image] = imgStore[el.image].src;
+  return { app: 'zine8', v: 2, state: JSON.parse(snapshot()), cur: state.cur, images: used };
+}
+async function loadProject(d) {
+  if (!d || !d.state || !Array.isArray(d.state.pages)) throw new Error('形式が違います');
+  for (const [id, src] of Object.entries(d.images || {})) if (!imgStore[id]) await registerImage(id, src);
+  const st = JSON.parse(JSON.stringify(d.state));
+  if (!st.units) { // v1（ページ単位）→ 見開き単位に変換
+    const pw = PAPER[st.paper || 'A4'].w / 4, bind = st.binding || 'left';
+    st.units = UNITS.map(us => {
+      const LR = us.length === 1 || bind === 'left' ? us : [...us].reverse(); const els = [];
+      LR.forEach((i, side) => (st.pages[i].els || []).forEach(el => { el.x += side * pw; els.push(el); }));
+      return { els };
+    });
+    st.pages = st.pages.map(p => ({ bg: p.bg || '#ffffff' }));
+    d.cur = UNITS.findIndex(a => a.includes(d.cur || 0));
+  }
+  state = Object.assign(defaultState(), st, { cur: Math.min(4, Math.max(0, d.cur || 0)) }); sel = null;
+}
+function idb() {
+  return new Promise((res, rej) => { const r = indexedDB.open('zine8maker', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+}
+async function idbSet(k, v) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+async function idbGet(k) { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('kv', 'readonly'); const r = tx.objectStore('kv').get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+let saveT, saveWarned = false;
+function scheduleSave() {
+  clearTimeout(saveT);
+  saveT = setTimeout(async () => {
+    try { await idbSet('project', projectData()); saveWarned = false; }
+    catch (e) { if (!saveWarned) { saveWarned = true; toast('ブラウザへの自動保存ができませんでした（容量不足など）。「データ保存」で書き出してください', 6000); } }
+  }, 700);
+}
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
+$('#bSaveProj').onclick = () => deliver('zine-data.json', JSON.stringify(projectData()));
+$('#bLoadProj').onclick = () => $('#fProj').click();
+$('#fProj').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { showBusy('読み込み中…'); await loadProject(JSON.parse(await f.text())); hideBusy(); commit(); renderAll(); toast('読み込みました'); }
+  catch (err) { hideBusy(); toast('読み込めませんでした：' + err.message); }
+};
+
+/* ---------- export ---------- */
+async function exportFile(kind) {
+  if (kind === 'pdf' && !(window.jspdf && window.jspdf.jsPDF)) { toast('PDFライブラリを読み込めませんでした。ページを再読み込みしてください'); return; }
+  showBusy(kind === 'pdf' ? 'PDFを作成中…' : '画像を作成中…');
+  try {
+    await ensureAllFonts(); await new Promise(r => setTimeout(r, 40));
+    const { W, H } = dims(), s = state.paper === 'A4' ? 10 : 8;
+    const cv = renderSheet(s, state.guides);
+    let data, name;
+    if (kind === 'pdf') {
+      const pdf = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: state.paper.toLowerCase(), compress: true });
+      pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, W, H, undefined, 'FAST');
+      pdf.setProperties({ title: '八つ折りZINE' });
+      data = pdf.output('blob'); name = `zine_${state.paper}.pdf`;
+    } else { data = await new Promise(r => cv.toBlob(r, 'image/png')); name = `zine_${state.paper}.png`; }
+    hideBusy(); await deliver(name, data);
+  } catch (e) { hideBusy(); toast('作成に失敗しました：' + (e.message || e)); }
+}
+async function deliver(name, data) {
+  const dl = await DL;
+  if (dl) {
+    try { await dl.save({ filename: name, data }); toast('保存しました。印刷は「実際のサイズ」で横向きに'); }
+    catch (err) { if (err && err.code === 'declined') toast('キャンセルしました'); else if (err && err.code === 'rate_limited') toast('少し待ってからもう一度お試しください'); else fallbackDownload(name, data); }
+  } else fallbackDownload(name, data);
+}
+function fallbackDownload(name, data) {
+  try {
+    const blob = data instanceof Blob ? data : new Blob([data], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('ダウンロードを開始しました');
+  } catch (e) { toast('ダウンロードできませんでした。別のブラウザでお試しください'); }
+}
+$('#bPdf').onclick = () => exportFile('pdf');
+$('#bPng').onclick = () => exportFile('png');
+
+/* ---------- toolbar ---------- */
+$('#bAddImg').onclick = () => { if (view !== 'edit') { view = 'edit'; renderView(); } $('#fImg').click(); };
+$('#bBulk').onclick = () => { if (view !== 'edit') { view = 'edit'; renderView(); } $('#fBulk').click(); };
+$('#bAddText').onclick = () => { if (view !== 'edit') { view = 'edit'; renderView(); } addText(); };
+$('#fImg').onchange = e => { const f = [...e.target.files]; e.target.value = ''; addImages(f, 'one'); };
+$('#fBulk').onchange = e => { const f = [...e.target.files]; e.target.value = ''; addImages(f, 'spread'); };
+$('#fReplace').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f || !replaceTarget) return;
+  const el = findEl(replaceTarget); if (!el) return;
+  try { showBusy('写真を読み込み中…'); el.image = await fileToImage(f); Object.assign(el, { zoom: 1, offX: 0, offY: 0 }); } catch (err) { toast('読み込めませんでした'); }
+  hideBusy(); commit(); renderAll();
+};
+
+/* ---------- modal / toast ---------- */
+function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').style.display = 'flex'; }
+function closeModal() { $('#modal').style.display = 'none'; }
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal' || e.target.closest('[data-close]')) closeModal(); });
+function confirmModal(title, msg, ok) {
+  return new Promise(res => {
+    openModal(`<h2>${title}</h2><p>${msg}</p><div class="foot"><button class="btn ghost" id="mNo">やめる</button><button class="btn primary" id="mOk">${ok}</button></div>`);
+    $('#mNo').onclick = () => { closeModal(); res(false); }; $('#mOk').onclick = () => { closeModal(); res(true); };
+  });
+}
+function layoutSVG() {
+  let g = '';
+  for (let i = 0; i < 8; i++) {
+    const { col, row, rot } = slotOf(i), x = col * 100, y = row * 70, cov = i === 0 || i === 7;
+    g += `<rect x="${x}" y="${y}" width="100" height="70" fill="${cov ? '#ffe3dc' : '#fff'}" stroke="#1c1a17" stroke-dasharray="3 3"/>`;
+    g += `<text x="${x + 50}" y="${y + 40}" text-anchor="middle" font-size="14" font-weight="700" ${rot ? `transform="rotate(180 ${x + 50} ${y + 35})"` : ''}>${LABELS[i]}</text>`;
+  }
+  return `<svg viewBox="-4 -4 408 148" style="width:100%;max-width:480px;display:block;margin:6px auto 14px;font-family:'Zen Kaku Gothic New',sans-serif">${g}
+    <rect x="0" y="0" width="400" height="140" fill="none" stroke="#1c1a17" stroke-width="2"/>
+    <line x1="100" y1="70" x2="300" y2="70" stroke="#e62828" stroke-width="3.5"/>
+    <text x="200" y="88" fill="#e62828" font-size="11" font-weight="700" text-anchor="middle">✂ ここだけ切る</text></svg>`;
+}
+$('#bHelp').onclick = () => openModal(`<h2>八つ折りの作り方</h2>
+  <p class="note">紙1枚をこの配置で印刷します（上の段は上下逆さま。${state.binding === 'right' ? '右綴じ' : '左綴じ'}の配置）。</p>
+  ${layoutSVG()}
+  <ol>
+    <li><b>印刷</b>：PDFを${state.paper}・<b>横向き</b>・片面で印刷。倍率は「実際のサイズ（100%）」がおすすめ。端が切れる場合は「用紙に合わせる」でもOK。</li>
+    <li><b>折り目をつける</b>：印刷面を上に横長に置き、左右半分→さらに半分→さらに半分と折って、縦の折り目を3本つけます。広げて、上下半分にも折り目をつけます。</li>
+    <li><b>切り込み</b>：左右半分に折った状態で、折り目（わ）の側から、横の折り目に沿って1マス分だけハサミで切ります。広げると真ん中に2マス分の切り込みができます。</li>
+    <li><b>組み立て</b>：上下半分に折り（印刷面が外）、両端を持って中央に押し込みます。切り込みがひし形に開いて十字の形になります。</li>
+    <li><b>完成</b>：表紙が一番上に来るように、ページをパタンとまとめれば8ページの本のできあがり！</li>
+  </ol>
+  <p class="note"><b>写真の扱い</b>：選んだ写真はサーバーに送信されず、お使いのブラウザの中だけで処理・保存されます。</p>
+  <p class="note">ヒント：右上の「印刷イメージ」タブで、面付けした状態を確認できます。厚手の紙より、普通紙やコピー用紙のほうがきれいに折れます。</p>
+  <div class="foot"><button class="btn primary" data-close>閉じる</button></div>`);
+let toastT;
+function toast(msg, ms = 2600) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms); }
+function showBusy(t) { $('#busyText').textContent = t; $('#busy').style.display = 'flex'; }
+function hideBusy() { $('#busy').style.display = 'none'; }
+
+/* ---------- init ---------- */
+// 同じブラウザの別タブで編集されたときに知らせる（最後に保存したタブの内容が残るため）
+let bc = null; const tabId = uid();
+try { bc = new BroadcastChannel('zine8maker'); bc.onmessage = e => { if (e.data && e.data.from !== tabId) toast('別のタブでも編集されています。同時に編集すると、後から保存した内容で上書きされます', 6000); }; } catch (e) {}
+const _sched = scheduleSave; let bcT;
+scheduleSave = () => { _sched(); clearTimeout(bcT); bcT = setTimeout(() => { try { bc && bc.postMessage({ from: tabId }); } catch (e) {} }, 800); };
+(async function init() {
+  buildPagesList();
+  try { const d = await idbGet('project'); if (d) await loadProject(d); } catch (e) {}
+  commit(); renderAll();
+  if (document.fonts) document.fonts.ready.then(() => { fontEpoch++; renderEditor(); scheduleThumbs(); });
+})();
+})();
+</script>
+</body>
+</html>
